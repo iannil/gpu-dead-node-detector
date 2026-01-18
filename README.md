@@ -4,7 +4,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![Kubernetes](https://img.shields.io/badge/kubernetes-1.25%2B-326CE5.svg)](https://kubernetes.io/)
 
-[English](#gdnd---gpu-dead-node-detector) | [中文](#gdnd---gpu-故障节点检测器)
+[English](README.md) | [中文](README_CN.md)
 
 **GDND** is a proactive GPU health monitoring and fault isolation system for Kubernetes clusters. It runs as a DaemonSet on all GPU nodes, detects unhealthy GPUs through multi-level detection, and automatically isolates faulty nodes via Taint/Cordon mechanisms.
 
@@ -288,50 +288,3 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - [kube-rs](https://github.com/kube-rs/kube) - Kubernetes client for Rust
 - [prometheus-rs](https://github.com/tikv/rust-prometheus) - Prometheus client for Rust
 
----
-
-# GDND - GPU 故障节点检测器
-
-**GDND** 是一个面向 Kubernetes 集群的主动式 GPU 健康监控与故障隔离系统。它以 DaemonSet 形式运行在所有 GPU 节点上，通过多级检测发现不健康的 GPU，并自动通过 Taint/Cordon 机制隔离故障节点。
-
-> "安睡险" - 在 GPU 故障蔓延到训练任务之前自动隔离。
-
-## 核心特性
-
-- **三级检测流水线**
-  - **L1 被动检测** (30秒): NVML 查询、XID 错误扫描、僵尸进程检测
-  - **L2 主动检测** (5分钟): CUDA 128x128 矩阵乘法微基准测试
-  - **L3 PCIe 检测** (24小时，可选): PCIe 带宽测试
-
-- **健康状态机**: `HEALTHY` → `SUSPECTED` → `UNHEALTHY` → `ISOLATED`
-
-- **自动隔离**: Cordon 节点、添加 Taint、驱逐 Pod (可配置)
-
-- **Prometheus 指标**: 完整的可观测性支持
-
-- **轻量级**: 目标镜像 < 50MB，资源占用极低
-
-- **可扩展**: 设备抽象层支持 NVIDIA GPU 和华为昇腾 NPU
-
-## 文档
-
-详细文档请参阅 `docs/` 目录：
-
-- [实现完成报告](docs/reports/completed/gdnd-rust-implementation-2026-01-18.md)
-- [验收报告](docs/reports/gdnd-rust-full-verification-2026-01-18.md)
-
-## 快速开始
-
-```bash
-# 使用 Helm 安装 (推荐)
-helm install gdnd ./release/rust/gdnd/chart \
-  --namespace kube-system \
-  --set config.dryRun=true
-
-# 查看日志
-kubectl logs -l app.kubernetes.io/name=gdnd -n kube-system -f
-```
-
-## 许可证
-
-Apache License 2.0
