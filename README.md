@@ -8,8 +8,6 @@
 
 **GDND** is a proactive GPU health monitoring and fault isolation system for Kubernetes clusters. It runs as a DaemonSet on all GPU nodes, detects unhealthy GPUs through multi-level detection, and automatically isolates faulty nodes via Taint/Cordon mechanisms.
 
-> "Sleep Well at Night" - Automatically isolate GPU failures before they cascade to your training jobs.
-
 ## Features
 
 - **Three-tier Detection Pipeline**
@@ -110,7 +108,7 @@ curl http://localhost:9100/metrics | grep gdnd_gpu
 ### Key Configuration Options
 
 | Parameter | Description | Default |
-|-----------|-------------|---------|
+| ----------- | ------------- | --------- |
 | `device_type` | Device type: `auto`, `nvidia`, `ascend` | `auto` |
 | `l1_interval` | L1 passive detection interval | `30s` |
 | `l2_interval` | L2 active detection interval | `5m` |
@@ -155,7 +153,7 @@ dry_run: false
 These XID errors trigger immediate GPU isolation:
 
 | XID | Description |
-|-----|-------------|
+| ----- | ------------- |
 | 31 | GPU memory page fault / MMU fault |
 | 43 | GPU stopped processing |
 | 48 | Double Bit ECC Error |
@@ -164,7 +162,7 @@ These XID errors trigger immediate GPU isolation:
 ## Prometheus Metrics
 
 | Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
+| -------- | ------ | -------- | ------------- |
 | `gdnd_gpu_status` | Gauge | gpu, uuid, name | Health status (0=healthy, 1=suspected, 2=unhealthy, 3=isolated) |
 | `gdnd_gpu_temperature_celsius` | Gauge | gpu | GPU temperature |
 | `gdnd_gpu_utilization_percent` | Gauge | gpu | GPU utilization |
@@ -175,8 +173,6 @@ These XID errors trigger immediate GPU isolation:
 | `gdnd_gpu_count` | Gauge | - | Number of GPUs detected |
 
 ## Development
-
-### Prerequisites
 
 - Rust 1.75+
 - CUDA Toolkit 12.2+ (for gpu-check binary)
@@ -249,7 +245,7 @@ release/rust/gdnd/
 ## Comparison with Alternatives
 
 | Feature | GDND | Node Problem Detector | DIY Scripts |
-|---------|------|----------------------|-------------|
+| --------- | ------ | ---------------------- | ------------- |
 | GPU-specific detection | ✅ XID, ECC, driver deadlock | ❌ Generic | Varies |
 | Active health check | ✅ CUDA matrix mul | ❌ | Varies |
 | Automatic isolation | ✅ Cordon + Taint | ⚠️ Manual rules | ⚠️ |
@@ -287,4 +283,3 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper) - Rust bindings for NVIDIA NVML
 - [kube-rs](https://github.com/kube-rs/kube) - Kubernetes client for Rust
 - [prometheus-rs](https://github.com/tikv/rust-prometheus) - Prometheus client for Rust
-

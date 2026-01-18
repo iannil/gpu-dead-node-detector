@@ -8,8 +8,6 @@
 
 **GDND** 是一个面向 Kubernetes 集群的主动式 GPU 健康监控与故障隔离系统。它以 DaemonSet 形式运行在所有 GPU 节点上，通过多级检测发现不健康的 GPU，并自动通过 Taint/Cordon 机制隔离故障节点。
 
-> "安睡险" - 在 GPU 故障蔓延到训练任务之前自动隔离。
-
 ## 核心特性
 
 - **三级检测流水线**
@@ -110,7 +108,7 @@ curl http://localhost:9100/metrics | grep gdnd_gpu
 ### 主要配置项
 
 | 参数 | 说明 | 默认值 |
-|------|------|--------|
+| ------ | ------ | -------- |
 | `device_type` | 设备类型: `auto`, `nvidia`, `ascend` | `auto` |
 | `l1_interval` | L1 被动检测间隔 | `30s` |
 | `l2_interval` | L2 主动检测间隔 | `5m` |
@@ -155,7 +153,7 @@ dry_run: false
 以下 XID 错误会触发 GPU 立即隔离：
 
 | XID | 说明 |
-|-----|------|
+| ----- | ------ |
 | 31 | GPU 内存页错误 / MMU 故障 |
 | 43 | GPU 停止处理 |
 | 48 | 双比特 ECC 错误 |
@@ -164,7 +162,7 @@ dry_run: false
 ## Prometheus 指标
 
 | 指标名 | 类型 | 标签 | 说明 |
-|--------|------|------|------|
+| -------- | ------ | ------ | ------ |
 | `gdnd_gpu_status` | Gauge | gpu, uuid, name | 健康状态 (0=健康, 1=疑似, 2=不健康, 3=已隔离) |
 | `gdnd_gpu_temperature_celsius` | Gauge | gpu | GPU 温度 |
 | `gdnd_gpu_utilization_percent` | Gauge | gpu | GPU 利用率 |
@@ -175,8 +173,6 @@ dry_run: false
 | `gdnd_gpu_count` | Gauge | - | 检测到的 GPU 数量 |
 
 ## 开发
-
-### 前置条件
 
 - Rust 1.75+
 - CUDA Toolkit 12.2+ (用于编译 gpu-check 二进制文件)
@@ -249,7 +245,7 @@ release/rust/gdnd/
 ## 与其他方案对比
 
 | 特性 | GDND | Node Problem Detector | DIY 脚本 |
-|------|------|----------------------|----------|
+| ------ | ------ | ---------------------- | ---------- |
 | GPU 专项检测 | ✅ XID、ECC、驱动死锁 | ❌ 通用 | 视情况 |
 | 主动健康检查 | ✅ CUDA 矩阵乘法 | ❌ | 视情况 |
 | 自动隔离 | ✅ Cordon + Taint | ⚠️ 需手动规则 | ⚠️ |
@@ -287,10 +283,3 @@ release/rust/gdnd/
 - [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper) - NVIDIA NVML 的 Rust 绑定
 - [kube-rs](https://github.com/kube-rs/kube) - Rust Kubernetes 客户端
 - [prometheus-rs](https://github.com/tikv/rust-prometheus) - Rust Prometheus 客户端
-
-## 文档
-
-详细文档请参阅 `docs/` 目录：
-
-- [实现完成报告](docs/reports/completed/gdnd-rust-implementation-2026-01-18.md)
-- [验收报告](docs/reports/gdnd-rust-full-verification-2026-01-18.md)
