@@ -1,0 +1,35 @@
+GDND (GPU Dead Node Detector) has been deployed!
+
+1. Check the status of the DaemonSet:
+
+   kubectl get daemonset {{ include "gdnd.fullname" . }} -n {{ .Release.Namespace }}
+
+2. View logs from a specific pod:
+
+   kubectl logs -l app.kubernetes.io/name={{ include "gdnd.name" . }} -n {{ .Release.Namespace }} -f
+
+3. Check GPU health status:
+
+   kubectl get nodes -o custom-columns='NAME:.metadata.name,TAINTS:.spec.taints[*].key'
+
+{{- if .Values.metrics.enabled }}
+
+4. Access Prometheus metrics:
+
+   Metrics are exposed on port {{ .Values.metrics.port }} at path {{ .Values.metrics.path }}
+
+   # Port-forward to access metrics locally
+   kubectl port-forward -n {{ .Release.Namespace }} daemonset/{{ include "gdnd.fullname" . }} {{ .Values.metrics.port }}:{{ .Values.metrics.port }}
+
+   # Then access: http://localhost:{{ .Values.metrics.port }}{{ .Values.metrics.path }}
+
+{{- end }}
+
+{{- if .Values.config.dryRun }}
+
+NOTE: GDND is running in DRY-RUN mode. No actual isolation actions will be taken.
+      To enable real isolation, set config.dryRun=false
+
+{{- end }}
+
+For more information, visit: {{ .Chart.Home }}

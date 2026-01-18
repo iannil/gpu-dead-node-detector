@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gdnd-config
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: gdnd
+    app.kubernetes.io/component: gpu-health-detector
+data:
+  config.yaml: |
+    # GDND Configuration
+    device_type: auto
+
+    # Detection intervals
+    l1_interval: 30s
+    l2_interval: 5m
+    l3_interval: 24h
+    l3_enabled: false
+
+    # GPU check binary path (in container)
+    gpu_check_path: /usr/local/bin/gpu-check
+
+    # Health check settings
+    health:
+      failure_threshold: 3
+      fatal_xids:
+        - 31  # GPU memory page fault
+        - 43  # GPU stopped processing
+        - 48  # Double Bit ECC Error
+        - 79  # GPU has fallen off the bus
+      temperature_threshold: 85
+      active_check_timeout: 5s
+
+    # Isolation actions
+    isolation:
+      cordon: true
+      evict_pods: false
+      taint_key: nvidia.com/gpu-health
+      taint_value: failed
+      taint_effect: NoSchedule
+
+    # Metrics
+    metrics:
+      enabled: true
+      port: 9100
+      path: /metrics
+
+    # Production mode
+    dry_run: false

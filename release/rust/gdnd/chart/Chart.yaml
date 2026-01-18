@@ -1,0 +1,19 @@
+apiVersion: v2
+name: gdnd
+description: GPU Dead Node Detector - Kubernetes GPU health monitoring and fault isolation system
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - gpu
+  - nvidia
+  - kubernetes
+  - health-check
+  - fault-isolation
+  - daemonset
+home: https://github.com/example/gpu-dead-node-detector
+sources:
+  - https://github.com/example/gpu-dead-node-detector
+maintainers:
+  - name: GDND Team
+    email: gdnd@example.com

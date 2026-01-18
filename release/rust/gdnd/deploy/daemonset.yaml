@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gdnd
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: gdnd
+    app.kubernetes.io/component: gpu-health-detector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gdnd
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gdnd
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: gdnd
+      hostPID: true  # Required for zombie process detection
+      priorityClassName: system-node-critical
+
+      # Only schedule on GPU nodes
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+
+      tolerations:
+        # Tolerate all taints so we can run on any GPU node
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+
+      containers:
+        - name: gdnd
+          image: gdnd:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config"
+            - "/etc/gdnd/config.yaml"
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: GDND_LOG_LEVEL
+              value: "info"
+            - name: GDND_LOG_JSON
+              value: "true"
+          ports:
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gdnd
+              readOnly: true
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            # NVIDIA device access
+            - name: nvidia-driver
+              mountPath: /usr/local/nvidia
+              readOnly: true
+
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9100
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+      volumes:
+        - name: config
+          configMap:
+            name: gdnd-config
+
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+
+        - name: nvidia-driver
+          hostPath:
+            path: /usr/local/nvidia
+            type: DirectoryOrCreate
+
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gdnd-metrics
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: gdnd
+    app.kubernetes.io/component: gpu-health-detector
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: gdnd

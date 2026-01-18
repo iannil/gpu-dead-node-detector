@@ -1,0 +1,130 @@
+# GDND Helm Chart Values
+# GPU Dead Node Detector configuration
+
+# Image configuration
+image:
+  repository: gdnd
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Image pull secrets (if using private registry)
+imagePullSecrets: []
+
+# Resource limits
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Node selector - by default selects nodes with NVIDIA GPUs
+nodeSelector:
+  nvidia.com/gpu: "true"
+
+# Tolerations for GPU nodes
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Pod priority class
+priorityClassName: system-node-critical
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  create: true
+
+# GDND configuration
+config:
+  # Device type: auto, nvidia, ascend
+  deviceType: auto
+
+  # L1 passive detection interval
+  l1Interval: "30s"
+
+  # L2 active detection interval
+  l2Interval: "5m"
+
+  # L3 PCIe detection interval
+  l3Interval: "24h"
+  l3Enabled: false
+
+  # Path to gpu-check binary
+  gpuCheckPath: "/usr/local/bin/gpu-check"
+
+  # Health check configuration
+  health:
+    # Number of consecutive failures before marking as UNHEALTHY
+    failureThreshold: 3
+    # Fatal XID error codes that trigger immediate isolation
+    fatalXids:
+      - 31  # GPU memory page fault
+      - 43  # GPU stopped processing
+      - 48  # Double Bit ECC Error
+      - 79  # GPU has fallen off the bus
+    # Temperature threshold in Celsius
+    temperatureThreshold: 85
+    # Timeout for active check operations
+    activeCheckTimeout: "5s"
+
+  # Isolation action configuration
+  isolation:
+    # Whether to cordon the node
+    cordon: true
+    # Whether to evict existing pods
+    evictPods: false
+    # Taint configuration
+    taintKey: "nvidia.com/gpu-health"
+    taintValue: "failed"
+    taintEffect: "NoSchedule"
+
+  # Dry run mode - log actions but don't execute
+  dryRun: false
+
+# Prometheus metrics configuration
+metrics:
+  enabled: true
+  port: 9100
+  path: "/metrics"
+
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: "30s"
+    labels: {}
+
+# Logging configuration
+logging:
+  level: info
+  format: json
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Security context
+securityContext:
+  privileged: true
+
+# Pod security context
+podSecurityContext: {}
+
+# Extra environment variables
+extraEnv: []
+
+# Extra volume mounts
+extraVolumeMounts: []
+
+# Extra volumes
+extraVolumes: []

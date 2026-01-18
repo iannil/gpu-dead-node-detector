@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gdnd
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: gdnd
+    app.kubernetes.io/component: gpu-health-detector
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gdnd
+  labels:
+    app.kubernetes.io/name: gdnd
+rules:
+  # Node operations: cordon, taint
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+
+  # Pod operations: list pods, evict
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+
+  # Events: create events for alerting
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+  # ConfigMaps: read configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gdnd
+  labels:
+    app.kubernetes.io/name: gdnd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gdnd
+subjects:
+  - kind: ServiceAccount
+    name: gdnd
+    namespace: kube-system

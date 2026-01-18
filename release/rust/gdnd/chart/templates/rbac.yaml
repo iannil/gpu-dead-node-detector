@@ -1,0 +1,47 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gdnd.fullname" . }}
+  labels:
+    {{- include "gdnd.labels" . | nindent 4 }}
+rules:
+  # Node operations: cordon, taint
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+
+  # Pod operations: list pods, evict
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+
+  # Events: create events for alerting
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+  # ConfigMaps: read configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gdnd.fullname" . }}
+  labels:
+    {{- include "gdnd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gdnd.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gdnd.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

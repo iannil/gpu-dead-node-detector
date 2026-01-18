@@ -1,0 +1,62 @@
+# GDND default configuration
+# This file contains the default configuration for GPU Dead Node Detector
+
+# Device type: auto, nvidia, ascend
+device_type: auto
+
+# L1 passive detection interval (NVML queries, XID scans)
+l1_interval: 30s
+
+# L2 active detection interval (CUDA matrix multiply)
+l2_interval: 5m
+
+# L3 PCIe detection (optional, disabled by default)
+l3_interval: 24h
+l3_enabled: false
+
+# Path to gpu-check binary for active checks
+gpu_check_path: /usr/local/bin/gpu-check
+
+# Health check configuration
+health:
+  # Number of consecutive failures before marking as UNHEALTHY
+  failure_threshold: 3
+
+  # Fatal XID error codes that trigger immediate isolation
+  # 31: GPU memory page fault
+  # 43: GPU stopped processing
+  # 48: Double Bit ECC Error
+  # 79: GPU has fallen off the bus
+  fatal_xids:
+    - 31
+    - 43
+    - 48
+    - 79
+
+  # Temperature threshold in Celsius
+  temperature_threshold: 85
+
+  # Timeout for active check operations
+  active_check_timeout: 5s
+
+# Isolation action configuration
+isolation:
+  # Whether to cordon the node (prevent new pod scheduling)
+  cordon: true
+
+  # Whether to evict existing pods from the node
+  evict_pods: false
+
+  # Taint configuration
+  taint_key: nvidia.com/gpu-health
+  taint_value: failed
+  taint_effect: NoSchedule
+
+# Prometheus metrics configuration
+metrics:
+  enabled: true
+  port: 9100
+  path: /metrics
+
+# Dry run mode - log actions but don't execute
+dry_run: false
