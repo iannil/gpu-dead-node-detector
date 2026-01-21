@@ -255,12 +255,28 @@ release/rust/gdnd/
 
 ## 路线图
 
+### 已完成 (v1.0)
+
+- [x] Rust 核心实现，支持 NVIDIA GPU
+- [x] L1 被动检测（NVML/npu-smi、XID 扫描、僵尸进程检测）
+- [x] L2 主动检测（CUDA/AscendCL 微基准测试）
+- [x] 健康状态机（HEALTHY → SUSPECTED → UNHEALTHY → ISOLATED）
+- [x] Kubernetes 集成（Cordon/Taint/Evict）
+- [x] Prometheus 指标
+- [x] Helm Chart 部署
+- [x] **华为昇腾 NPU 完整支持** (2026-01-21)
+
+### 进行中
+
+- [ ] L3 PCIe 带宽测试（框架就绪，完成 80%）
+- [ ] 真实硬件集成测试
+
+### 规划中
+
 - [ ] ECC 错误检测增强
-- [ ] 华为昇腾 NPU 完整支持
-- [ ] L3 PCIe 带宽测试实现
 - [ ] Grafana 仪表板模板
 - [ ] AlertManager 集成
-- [ ] 节点自动恢复 (GPU 重置)
+- [ ] 节点自动恢复（GPU 重置，ISOLATED → HEALTHY）
 - [ ] 多 GPU 单卡隔离
 
 ## 参与贡献

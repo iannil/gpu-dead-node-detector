@@ -255,12 +255,28 @@ release/rust/gdnd/
 
 ## Roadmap
 
+### Completed (v1.0)
+
+- [x] Core Rust implementation with NVIDIA GPU support
+- [x] L1 Passive Detection (NVML/npu-smi, XID scanning, zombie process detection)
+- [x] L2 Active Detection (CUDA/AscendCL micro-benchmark)
+- [x] Health State Machine (HEALTHY → SUSPECTED → UNHEALTHY → ISOLATED)
+- [x] Kubernetes integration (Cordon/Taint/Evict)
+- [x] Prometheus metrics
+- [x] Helm Chart deployment
+- [x] **Huawei Ascend NPU full support** (2026-01-21)
+
+### In Progress
+
+- [ ] L3 PCIe bandwidth test (framework ready, 80% complete)
+- [ ] Real hardware integration testing
+
+### Planned
+
 - [ ] ECC error detection enhancement
-- [ ] Huawei Ascend NPU full support
-- [ ] L3 PCIe bandwidth test implementation
 - [ ] Grafana dashboard templates
 - [ ] AlertManager integration
-- [ ] Node auto-recovery (GPU reset)
+- [ ] Node auto-recovery (GPU reset, ISOLATED → HEALTHY)
 - [ ] Multi-GPU per-device isolation
 
 ## Contributing
