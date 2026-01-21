@@ -1,0 +1,88 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# C/C++/CUDA 编译产物
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.dSYM/
+
+# CUDA 编译产物
+*.cubin
+*.ptx
+*.fatbin
+*.ii
+*.i
+*.gpu
+*.stub.c
+
+# GPU/NPU 检测二进制
+gpu_check
+npu_check
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.cproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 日志文件
+*.log
+logs/
+
+# 环境配置
+.env
+.env.*
+!.env.example
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+tmp/
+temp/
+
+# 备份目录 (LLM Friendly 策略)
+backup/
+
+# Kubernetes 密钥 (不要提交)
+*-secret.yaml
+secrets/
+
+# 测试覆盖率
+*.gcno
+*.gcda
+*.gcov
+coverage/
+htmlcov/
+
+# Profiling
+perf.data
+perf.data.old
+*.profraw
+*.profdata

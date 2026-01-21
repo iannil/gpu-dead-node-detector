@@ -1,0 +1,128 @@
+# Multi-stage Dockerfile for GDND (Huawei Ascend NPU version)
+# Target image size: < 100MB (larger due to Ascend runtime)
+#
+# Build context should be /src/rust/gdnd (source directory)
+# Usage: docker build -t gdnd:ascend -f /release/rust/gdnd/deploy/Dockerfile.ascend /src/rust/gdnd
+#
+# Prerequisites:
+# - Access to Huawei Ascend Hub (ascendhub.huawei.com) or local CANN toolkit image
+# - CANN Toolkit 8.0+ installed in base image
+
+# ============================================================================
+# Stage 1: Build Rust binary
+# ============================================================================
+FROM rust:1.75-bookworm AS rust-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY gdnd/Cargo.toml gdnd/Cargo.toml
+COPY gdnd-core/Cargo.toml gdnd-core/Cargo.toml
+COPY gdnd-k8s/Cargo.toml gdnd-k8s/Cargo.toml
+
+# Create dummy source files for dependency caching
+RUN mkdir -p gdnd/src gdnd-core/src gdnd-k8s/src && \
+    echo "fn main() {}" > gdnd/src/main.rs && \
+    echo "pub fn dummy() {}" > gdnd-core/src/lib.rs && \
+    echo "pub fn dummy() {}" > gdnd-k8s/src/lib.rs
+
+# Build dependencies
+RUN cargo build --release --package gdnd 2>/dev/null || true
+
+# Copy actual source code
+COPY gdnd/src gdnd/src
+COPY gdnd-core/src gdnd-core/src
+COPY gdnd-k8s/src gdnd-k8s/src
+
+# Touch source files to invalidate cache
+RUN touch gdnd/src/main.rs gdnd-core/src/lib.rs gdnd-k8s/src/lib.rs
+
+# Build final binary
+RUN cargo build --release --package gdnd && \
+    strip /build/target/release/gdnd
+
+# ============================================================================
+# Stage 2: Build AscendCL npu-check binary
+# ============================================================================
+# Note: Replace with actual Ascend toolkit image from your registry
+# Options:
+# - ascendhub.huawei.com/public-ascendhub/ascend-toolkit:latest
+# - Your private registry with CANN toolkit
+# - Local build with CANN installed
+FROM ascendhub.huawei.com/public-ascendhub/ascend-toolkit:24.0.RC1-ubuntu22.04 AS ascend-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy npu-check source
+COPY npu-check/npu_check.cpp .
+
+# Set Ascend environment
+ENV ASCEND_HOME=/usr/local/Ascend/ascend-toolkit/latest
+ENV LD_LIBRARY_PATH=${ASCEND_HOME}/lib64:${LD_LIBRARY_PATH}
+
+# Build npu-check
+RUN g++ -std=c++11 -O2 \
+    -I${ASCEND_HOME}/include \
+    -L${ASCEND_HOME}/lib64 \
+    -o npu-check npu_check.cpp \
+    -lascendcl -lrt && \
+    strip npu-check
+
+# ============================================================================
+# Stage 3: Final runtime image
+# ============================================================================
+# Use Ascend inference runtime image (smaller than toolkit)
+FROM ascendhub.huawei.com/public-ascendhub/ascend-infer:24.0.RC1-ubuntu22.04
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    kmod \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/share/doc /usr/share/man /usr/share/locale
+
+# Set Ascend environment
+ENV ASCEND_HOME=/usr/local/Ascend/ascend-toolkit/latest
+ENV LD_LIBRARY_PATH=${ASCEND_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${ASCEND_HOME}/bin:${PATH}
+
+# Copy binaries from build stages
+COPY --from=rust-builder /build/target/release/gdnd /usr/local/bin/gdnd
+COPY --from=ascend-builder /build/npu-check /usr/local/bin/npu-check
+
+# Copy default configuration
+COPY configs/config.yaml /etc/gdnd/config.yaml
+
+# Create non-root user (note: needs access to /dev/davinci* devices)
+RUN groupadd -r gdnd && useradd -r -g gdnd gdnd
+
+# Create log directory for device-os logs (mounted from host)
+RUN mkdir -p /var/log/npu/slog && chown -R gdnd:gdnd /var/log/npu
+
+# Expose metrics port
+EXPOSE 9100
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/npu-check -v || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/gdnd"]
+CMD ["--config", "/etc/gdnd/config.yaml"]
+
+# Labels
+LABEL maintainer="GDND Team"
+LABEL description="GPU Dead Node Detector for Huawei Ascend NPU"
+LABEL version="1.0"
+LABEL vendor="Internal"

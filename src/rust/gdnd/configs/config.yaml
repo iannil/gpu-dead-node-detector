@@ -4,25 +4,28 @@
 # Device type: auto, nvidia, ascend
 device_type: auto
 
-# L1 passive detection interval (NVML queries, XID scans)
+# L1 passive detection interval (NVML/npu-smi queries, XID/error scans)
 l1_interval: 30s
 
-# L2 active detection interval (CUDA matrix multiply)
+# L2 active detection interval (CUDA/AscendCL micro-benchmark)
 l2_interval: 5m
 
 # L3 PCIe detection (optional, disabled by default)
 l3_interval: 24h
 l3_enabled: false
 
-# Path to gpu-check binary for active checks
+# Path to gpu-check binary for active checks (NVIDIA)
 gpu_check_path: /usr/local/bin/gpu-check
+
+# Path to npu-check binary for active checks (Ascend)
+npu_check_path: /usr/local/bin/npu-check
 
 # Health check configuration
 health:
   # Number of consecutive failures before marking as UNHEALTHY
   failure_threshold: 3
 
-  # Fatal XID error codes that trigger immediate isolation
+  # Fatal XID error codes that trigger immediate isolation (NVIDIA)
   # 31: GPU memory page fault
   # 43: GPU stopped processing
   # 48: Double Bit ECC Error
@@ -33,11 +36,29 @@ health:
     - 48
     - 79
 
+  # Fatal error codes for Ascend NPU
+  # 1001: HBM memory error
+  # 1002: AI Core hang
+  # 1007: Device lost
+  # 1008: ECC uncorrectable error
+  fatal_ascend_errors:
+    - 1001
+    - 1002
+    - 1007
+    - 1008
+
   # Temperature threshold in Celsius
   temperature_threshold: 85
 
   # Timeout for active check operations
   active_check_timeout: 5s
+
+# Ascend NPU specific configuration
+ascend:
+  # Path to npu-smi binary
+  npu_smi_path: /usr/local/bin/npu-smi
+  # Path to NPU log directory
+  log_dir: /var/log/npu/slog
 
 # Isolation action configuration
 isolation:
@@ -47,10 +68,15 @@ isolation:
   # Whether to evict existing pods from the node
   evict_pods: false
 
-  # Taint configuration
+  # Taint configuration for NVIDIA GPUs
   taint_key: nvidia.com/gpu-health
   taint_value: failed
   taint_effect: NoSchedule
+
+  # Taint configuration for Ascend NPUs
+  ascend_taint_key: huawei.com/npu-health
+  ascend_taint_value: failed
+  ascend_taint_effect: NoSchedule
 
 # Prometheus metrics configuration
 metrics:
