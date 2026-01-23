@@ -17,6 +17,8 @@ pub struct MockDevice {
     devices: Vec<DeviceId>,
     /// Configurable failure simulation
     pub fail_active_check: AtomicBool,
+    /// Configurable PCIe test failure simulation
+    pub fail_pcie_test: AtomicBool,
     /// Simulated XID errors
     xid_errors: RwLock<Vec<XidError>>,
     /// Simulated temperature
@@ -44,6 +46,7 @@ impl MockDevice {
         Self {
             devices,
             fail_active_check: AtomicBool::new(false),
+            fail_pcie_test: AtomicBool::new(false),
             xid_errors: RwLock::new(Vec::new()),
             temperature: AtomicU32::new(45),
             zombie_pids: RwLock::new(Vec::new()),
@@ -53,6 +56,11 @@ impl MockDevice {
     /// Set whether active check should fail
     pub fn set_fail_active_check(&self, fail: bool) {
         self.fail_active_check.store(fail, Ordering::SeqCst);
+    }
+
+    /// Set whether PCIe test should fail
+    pub fn set_fail_pcie_test(&self, fail: bool) {
+        self.fail_pcie_test.store(fail, Ordering::SeqCst);
     }
 
     /// Add a simulated XID error
@@ -170,7 +178,16 @@ impl DeviceInterface for MockDevice {
     async fn run_pcie_test(&self, _device: &DeviceId) -> Result<CheckResult, DeviceError> {
         // Simulate PCIe test
         tokio::time::sleep(Duration::from_millis(100)).await;
-        Ok(CheckResult::success(Duration::from_millis(100)))
+
+        if self.fail_pcie_test.load(Ordering::SeqCst) {
+            Ok(CheckResult::failure(
+                Duration::from_millis(100),
+                "PCIe bandwidth degradation detected: 4.5 GB/s (expected 12+ GB/s)".to_string(),
+                Some(1),
+            ))
+        } else {
+            Ok(CheckResult::success(Duration::from_millis(100)))
+        }
     }
 }
 

@@ -114,6 +114,79 @@ impl Default for MetricsConfig {
     }
 }
 
+/// Healing strategy for self-healing operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum HealingStrategy {
+    /// Conservative: Only kill zombie processes, no hardware resets
+    #[default]
+    Conservative,
+    /// Moderate: Kill zombies + attempt GPU soft reset
+    Moderate,
+    /// Aggressive: All recovery options including driver reload
+    /// WARNING: This will interrupt ALL GPU workloads on the node
+    Aggressive,
+}
+
+/// Self-healing configuration
+/// WARNING: Healing operations may interrupt running GPU workloads
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealingConfig {
+    /// Enable self-healing (disabled by default for safety)
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Healing strategy to use
+    #[serde(default)]
+    pub strategy: HealingStrategy,
+
+    /// Run healing operations in dry-run mode (log but don't execute)
+    #[serde(default)]
+    pub dry_run: bool,
+
+    /// Timeout for healing operations
+    #[serde(with = "humantime_serde", default = "default_healing_timeout")]
+    pub timeout: Duration,
+}
+
+impl Default for HealingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strategy: HealingStrategy::default(),
+            dry_run: false,
+            timeout: default_healing_timeout(),
+        }
+    }
+}
+
+/// Recovery detection configuration
+/// Allow isolated GPUs to return to healthy state after recovery
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryConfig {
+    /// Enable recovery detection (disabled by default)
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Number of consecutive healthy checks before recovery
+    #[serde(default = "default_recovery_threshold")]
+    pub threshold: u32,
+
+    /// Interval between recovery checks
+    #[serde(with = "humantime_serde", default = "default_recovery_interval")]
+    pub interval: Duration,
+}
+
+impl Default for RecoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: default_recovery_threshold(),
+            interval: default_recovery_interval(),
+        }
+    }
+}
+
 /// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -157,6 +230,14 @@ pub struct Config {
     #[serde(default)]
     pub metrics: MetricsConfig,
 
+    /// Self-healing configuration
+    #[serde(default)]
+    pub healing: HealingConfig,
+
+    /// Recovery detection configuration
+    #[serde(default)]
+    pub recovery: RecoveryConfig,
+
     /// Dry run mode - log actions but don't execute
     #[serde(default)]
     pub dry_run: bool,
@@ -175,6 +256,8 @@ impl Default for Config {
             health: HealthConfig::default(),
             isolation: IsolationConfig::default(),
             metrics: MetricsConfig::default(),
+            healing: HealingConfig::default(),
+            recovery: RecoveryConfig::default(),
             dry_run: false,
         }
     }
@@ -277,6 +360,18 @@ fn default_metrics_path() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_healing_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
+fn default_recovery_threshold() -> u32 {
+    5
+}
+
+fn default_recovery_interval() -> Duration {
+    Duration::from_secs(300) // 5 minutes
 }
 
 #[cfg(test)]

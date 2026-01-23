@@ -144,7 +144,7 @@ impl DeviceInterface for NvidiaDevice {
             .arg("-T")
             .output()
             .await
-            .map_err(|e| DeviceError::IoError(e))?;
+            .map_err(DeviceError::IoError)?;
 
         if !output.status.success() {
             debug!("dmesg command failed, skipping XID scan");
@@ -177,7 +177,7 @@ impl DeviceInterface for NvidiaDevice {
             .args(["-i", &device.index.to_string()])
             .output()
             .await
-            .map_err(|e| DeviceError::IoError(e))?;
+            .map_err(DeviceError::IoError)?;
 
         if !output.status.success() {
             return Ok(Vec::new());

@@ -7,9 +7,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use tokio::sync::{watch, RwLock};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
-use crate::detection::{DetectionLevel, DetectionResult, L1PassiveDetector, L2ActiveDetector};
+use crate::detection::{DetectionLevel, DetectionResult, L1PassiveDetector, L2ActiveDetector, L3PcieDetector};
+use crate::healing::SelfHealer;
 use crate::metrics::MetricsRegistry;
 use crate::state_machine::{GpuHealthManager, HealthEvent, HealthState, StateTransition};
 
@@ -24,11 +25,14 @@ pub trait IsolationExecutor: Send + Sync {
 pub struct DetectionScheduler<E: IsolationExecutor> {
     l1_detector: L1PassiveDetector,
     l2_detector: L2ActiveDetector,
+    l3_detector: Option<L3PcieDetector>,
     health_manager: Arc<RwLock<GpuHealthManager>>,
     isolation_executor: Arc<E>,
+    healer: Option<Arc<SelfHealer>>,
     metrics: Arc<MetricsRegistry>,
     l1_interval: Duration,
     l2_interval: Duration,
+    l3_interval: Option<Duration>,
 }
 
 impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
@@ -45,12 +49,28 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
         Self {
             l1_detector,
             l2_detector,
+            l3_detector: None,
             health_manager,
             isolation_executor,
+            healer: None,
             metrics,
             l1_interval,
             l2_interval,
+            l3_interval: None,
         }
+    }
+
+    /// Set the self-healer for automatic recovery attempts
+    pub fn with_healer(mut self, healer: SelfHealer) -> Self {
+        self.healer = Some(Arc::new(healer));
+        self
+    }
+
+    /// Set the L3 PCIe detector for bandwidth testing
+    pub fn with_l3(mut self, detector: L3PcieDetector, interval: Duration) -> Self {
+        self.l3_detector = Some(detector);
+        self.l3_interval = Some(interval);
+        self
     }
 
     /// Run the detection loop
@@ -58,6 +78,8 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
         info!(
             l1_interval = ?self.l1_interval,
             l2_interval = ?self.l2_interval,
+            l3_interval = ?self.l3_interval,
+            l3_enabled = self.l3_detector.is_some(),
             "Starting detection scheduler"
         );
 
@@ -67,6 +89,12 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
         // Skip immediate first tick
         l1_ticker.tick().await;
         l2_ticker.tick().await;
+
+        // L3 ticker only if enabled
+        let mut l3_ticker = self.l3_interval.map(tokio::time::interval);
+        if let Some(ref mut ticker) = l3_ticker {
+            ticker.tick().await;
+        }
 
         loop {
             tokio::select! {
@@ -78,6 +106,17 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
                 _ = l2_ticker.tick() => {
                     if let Err(e) = self.run_l2_detection().await {
                         error!(error = %e, "L2 detection failed");
+                    }
+                }
+                _ = async {
+                    if let Some(ref mut ticker) = l3_ticker {
+                        ticker.tick().await
+                    } else {
+                        std::future::pending::<tokio::time::Instant>().await
+                    }
+                } => {
+                    if let Err(e) = self.run_l3_detection().await {
+                        error!(error = %e, "L3 detection failed");
                     }
                 }
                 _ = shutdown.changed() => {
@@ -124,6 +163,26 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
         Ok(())
     }
 
+    /// Run L3 PCIe detection on all devices
+    async fn run_l3_detection(&self) -> Result<()> {
+        let Some(detector) = &self.l3_detector else {
+            return Ok(());
+        };
+
+        debug!("Running L3 PCIe detection");
+        let start = Instant::now();
+
+        let results = detector.detect_all().await?;
+
+        for result in results {
+            self.process_result(&result).await?;
+            self.update_metrics(&result, start.elapsed());
+        }
+
+        debug!(duration = ?start.elapsed(), "L3 detection complete");
+        Ok(())
+    }
+
     /// Process a detection result
     async fn process_result(&self, result: &DetectionResult) -> Result<()> {
         let mut manager = self.health_manager.write().await;
@@ -142,8 +201,54 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
                 device = %result.device,
                 from = %transition.from,
                 to = %transition.to,
-                "Executing isolation actions"
+                "Device became unhealthy"
             );
+
+            // Attempt self-healing if enabled
+            if let Some(healer) = &self.healer {
+                if healer.is_enabled() {
+                    info!(device = %result.device, "Attempting self-healing before isolation");
+                    let device = result.device.clone();
+                    let healer = Arc::clone(healer);
+
+                    // Run healing in blocking task since it uses std::process::Command
+                    let heal_results = tokio::task::spawn_blocking(move || {
+                        healer.heal(&device)
+                    })
+                    .await;
+
+                    match heal_results {
+                        Ok(Ok(results)) => {
+                            for heal_result in &results {
+                                if heal_result.success {
+                                    info!(
+                                        device = %result.device,
+                                        action = ?heal_result.action,
+                                        message = ?heal_result.message,
+                                        "Healing action succeeded"
+                                    );
+                                } else {
+                                    warn!(
+                                        device = %result.device,
+                                        action = ?heal_result.action,
+                                        message = ?heal_result.message,
+                                        "Healing action failed"
+                                    );
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            warn!(device = %result.device, error = %e, "Healing failed");
+                        }
+                        Err(e) => {
+                            error!(device = %result.device, error = %e, "Healing task panicked");
+                        }
+                    }
+                }
+            }
+
+            // Proceed with isolation regardless of healing outcome
+            info!(device = %result.device, "Executing isolation actions");
 
             if let Err(e) = self.isolation_executor.execute(&transition).await {
                 error!(error = %e, "Failed to execute isolation actions");
@@ -181,9 +286,10 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
     pub async fn run_once(&self) -> Result<()> {
         info!("Running single detection pass");
 
-        // Run both L1 and L2
+        // Run L1, L2, and L3 (if enabled)
         self.run_l1_detection().await?;
         self.run_l2_detection().await?;
+        self.run_l3_detection().await?;
 
         Ok(())
     }

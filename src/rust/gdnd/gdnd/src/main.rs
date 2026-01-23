@@ -16,9 +16,10 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use cli::Cli;
-use config::Config;
-use gdnd_core::detection::{L1PassiveDetector, L2ActiveDetector};
+use config::{Config, HealingStrategy as ConfigHealingStrategy};
+use gdnd_core::detection::{L1PassiveDetector, L2ActiveDetector, L3PcieDetector};
 use gdnd_core::device::{create_device_interface, DeviceType as CoreDeviceType};
+use gdnd_core::healing::{HealingConfig as CoreHealingConfig, HealingStrategy as CoreHealingStrategy, SelfHealer};
 use gdnd_core::metrics::MetricsRegistry;
 use gdnd_core::scheduler::{DetectionScheduler, IsolationExecutor};
 use gdnd_core::state_machine::{GpuHealthManager, StateTransition};
@@ -60,6 +61,15 @@ fn to_k8s_isolation_config(config: &config::IsolationConfig) -> IsolationConfig 
         taint_key: config.taint_key.clone(),
         taint_value: config.taint_value.clone(),
         taint_effect: config.taint_effect.clone(),
+    }
+}
+
+/// Convert config healing strategy to core healing strategy
+fn to_core_healing_strategy(strategy: ConfigHealingStrategy) -> CoreHealingStrategy {
+    match strategy {
+        ConfigHealingStrategy::Conservative => CoreHealingStrategy::Conservative,
+        ConfigHealingStrategy::Moderate => CoreHealingStrategy::Moderate,
+        ConfigHealingStrategy::Aggressive => CoreHealingStrategy::Aggressive,
     }
 }
 
@@ -118,10 +128,22 @@ async fn run(config: Config, shutdown_rx: watch::Receiver<bool>) -> Result<()> {
     let executor = Arc::new(NodeOperatorExecutor::new(node_operator));
 
     // Initialize health state manager
-    let health_manager = Arc::new(RwLock::new(GpuHealthManager::new(
-        config.health.failure_threshold,
-        config.health.fatal_xids.clone(),
-    )));
+    let health_manager = if config.recovery.enabled {
+        info!(
+            threshold = config.recovery.threshold,
+            "Recovery detection enabled"
+        );
+        Arc::new(RwLock::new(GpuHealthManager::with_recovery(
+            config.health.failure_threshold,
+            config.recovery.threshold,
+            config.health.fatal_xids.clone(),
+        )))
+    } else {
+        Arc::new(RwLock::new(GpuHealthManager::new(
+            config.health.failure_threshold,
+            config.health.fatal_xids.clone(),
+        )))
+    };
 
     // Initialize detectors
     let l1_detector = L1PassiveDetector::new(
@@ -137,7 +159,7 @@ async fn run(config: Config, shutdown_rx: watch::Receiver<bool>) -> Result<()> {
     );
 
     // Create scheduler
-    let scheduler = DetectionScheduler::new(
+    let mut scheduler = DetectionScheduler::new(
         l1_detector,
         l2_detector,
         health_manager.clone(),
@@ -146,6 +168,37 @@ async fn run(config: Config, shutdown_rx: watch::Receiver<bool>) -> Result<()> {
         config.l1_interval,
         config.l2_interval,
     );
+
+    // Attach self-healer if healing is enabled
+    if config.healing.enabled {
+        info!(
+            strategy = ?config.healing.strategy,
+            dry_run = config.healing.dry_run,
+            "Self-healing enabled"
+        );
+
+        let core_device_type = to_core_device_type(config.device_type);
+        let healing_config = CoreHealingConfig {
+            enabled: config.healing.enabled,
+            strategy: to_core_healing_strategy(config.healing.strategy),
+            timeout: config.healing.timeout,
+            dry_run: config.healing.dry_run,
+        };
+
+        let healer = SelfHealer::new(healing_config, core_device_type);
+        scheduler = scheduler.with_healer(healer);
+    }
+
+    // Attach L3 PCIe detector if enabled
+    if config.l3_enabled {
+        info!(
+            interval = ?config.l3_interval,
+            "L3 PCIe detection enabled"
+        );
+
+        let l3_detector = L3PcieDetector::new(device.clone());
+        scheduler = scheduler.with_l3(l3_detector, config.l3_interval);
+    }
 
     // Start metrics server if enabled
     if config.metrics.enabled {

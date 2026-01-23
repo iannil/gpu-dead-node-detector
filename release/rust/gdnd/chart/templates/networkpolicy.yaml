@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gdnd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gdnd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "gdnd.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- if .Values.metrics.enabled }}
+    # Allow Prometheus to scrape metrics
+    - from:
+        {{- if .Values.networkPolicy.prometheus.namespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.prometheus.namespaceSelector | nindent 12 }}
+          {{- if .Values.networkPolicy.prometheus.podSelector }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.prometheus.podSelector | nindent 12 }}
+          {{- end }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.metrics.port }}
+    {{- end }}
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow access to Kubernetes API server
+    - to:
+        {{- if .Values.networkPolicy.apiServer.cidr }}
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.apiServer.cidr }}
+        {{- else }}
+        # Default: allow all IPs on API server port (cluster may vary)
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.apiServer.port | default 6443 }}
+{{- end }}

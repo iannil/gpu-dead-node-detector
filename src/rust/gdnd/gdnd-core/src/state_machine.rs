@@ -1,13 +1,14 @@
 //! GPU Health State Machine
 //!
 //! Manages the health state of each GPU device:
-//! HEALTHY → SUSPECTED → UNHEALTHY → ISOLATED
+//! HEALTHY → SUSPECTED → UNHEALTHY → ISOLATED → HEALTHY (recovery)
 //!
 //! State transitions:
 //! - HEALTHY → SUSPECTED: Single check failure
 //! - SUSPECTED → UNHEALTHY: failure_threshold consecutive failures OR fatal XID
 //! - SUSPECTED → HEALTHY: Check passes
 //! - UNHEALTHY → ISOLATED: Isolation actions completed
+//! - ISOLATED → HEALTHY: recovery_threshold consecutive passes (optional recovery)
 
 use std::collections::HashMap;
 
@@ -42,16 +43,22 @@ impl std::fmt::Display for HealthState {
     }
 }
 
-/// Actions to take for isolation
+/// Actions to take for isolation or recovery
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IsolationAction {
     /// Cordon the node (prevent new pods from scheduling)
     Cordon,
+    /// Uncordon the node (allow new pods to schedule)
+    Uncordon,
     /// Add taint to the node
     Taint {
         key: String,
         value: String,
         effect: String,
+    },
+    /// Remove taint from the node
+    RemoveTaint {
+        key: String,
     },
     /// Evict pods from the node
     EvictPods,
@@ -68,6 +75,8 @@ pub struct GpuHealth {
     pub state: HealthState,
     /// Number of consecutive failures
     pub failure_count: u32,
+    /// Number of consecutive recovery check passes (for ISOLATED state)
+    pub recovery_count: u32,
     /// Last check timestamp
     pub last_check: DateTime<Utc>,
     /// State change timestamp
@@ -84,6 +93,7 @@ impl GpuHealth {
             device,
             state: HealthState::Healthy,
             failure_count: 0,
+            recovery_count: 0,
             last_check: now,
             state_changed_at: now,
             last_findings: Vec::new(),
@@ -145,6 +155,10 @@ pub struct GpuHealthManager {
     health: HashMap<String, GpuHealth>,
     /// Failure threshold for SUSPECTED → UNHEALTHY transition
     failure_threshold: u32,
+    /// Recovery threshold for ISOLATED → HEALTHY transition (0 = disabled)
+    recovery_threshold: u32,
+    /// Whether recovery is enabled
+    recovery_enabled: bool,
     /// Fatal XID codes (unused but kept for reference)
     #[allow(dead_code)]
     fatal_xids: Vec<u32>,
@@ -156,8 +170,32 @@ impl GpuHealthManager {
         Self {
             health: HashMap::new(),
             failure_threshold,
+            recovery_threshold: 0,
+            recovery_enabled: false,
             fatal_xids,
         }
+    }
+
+    /// Create a new health manager with recovery enabled
+    pub fn with_recovery(failure_threshold: u32, recovery_threshold: u32, fatal_xids: Vec<u32>) -> Self {
+        Self {
+            health: HashMap::new(),
+            failure_threshold,
+            recovery_threshold,
+            recovery_enabled: recovery_threshold > 0,
+            fatal_xids,
+        }
+    }
+
+    /// Enable or disable recovery detection
+    pub fn set_recovery_enabled(&mut self, enabled: bool, threshold: u32) {
+        self.recovery_enabled = enabled;
+        self.recovery_threshold = threshold;
+    }
+
+    /// Check if recovery is enabled
+    pub fn is_recovery_enabled(&self) -> bool {
+        self.recovery_enabled
     }
 
     /// Get or create health record for a device
@@ -223,10 +261,33 @@ impl GpuHealthManager {
         actions
     }
 
+    /// Generate recovery actions for recovered GPU
+    fn recovery_actions(device: &DeviceId) -> Vec<IsolationAction> {
+        let mut actions = Vec::new();
+
+        // Remove taint
+        actions.push(IsolationAction::RemoveTaint {
+            key: "nvidia.com/gpu-health".to_string(),
+        });
+
+        // Uncordon node
+        actions.push(IsolationAction::Uncordon);
+
+        // Alert
+        actions.push(IsolationAction::Alert {
+            message: format!("GPU {} recovered and restored to service", device),
+            severity: "info".to_string(),
+        });
+
+        actions
+    }
+
     /// Perform state transition
     pub fn transition(&mut self, device: &DeviceId, event: HealthEvent) -> StateTransition {
-        // Copy threshold before mutable borrow
+        // Copy thresholds before mutable borrow
         let failure_threshold = self.failure_threshold;
+        let recovery_threshold = self.recovery_threshold;
+        let recovery_enabled = self.recovery_enabled;
 
         let health = self.get_or_create_mut(device);
         let old_state = health.state;
@@ -349,8 +410,58 @@ impl GpuHealthManager {
                 StateTransition::no_change(HealthState::Unhealthy)
             }
 
-            // ISOLATED state - no transitions (requires manual intervention)
-            (HealthState::Isolated, _) => {
+            // ISOLATED state transitions
+            // Recovery is optional and controlled by recovery_enabled
+            (HealthState::Isolated, HealthEvent::CheckPassed) => {
+                if recovery_enabled {
+                    health.recovery_count += 1;
+                    let recovery_count = health.recovery_count;
+
+                    if recovery_count >= recovery_threshold {
+                        // Recovery threshold reached, restore to healthy
+                        health.state = HealthState::Healthy;
+                        health.state_changed_at = Utc::now();
+                        health.failure_count = 0;
+                        health.recovery_count = 0;
+                        health.last_findings.clear();
+                        info!(
+                            device = %device,
+                            from = %old_state,
+                            to = %health.state,
+                            recovery_checks = recovery_count,
+                            "GPU recovered after consecutive healthy checks"
+                        );
+                        StateTransition::transition(
+                            old_state,
+                            HealthState::Healthy,
+                            Self::recovery_actions(device),
+                        )
+                    } else {
+                        debug!(
+                            device = %device,
+                            recovery_count = recovery_count,
+                            threshold = recovery_threshold,
+                            "GPU check passed, still isolated (recovery in progress)"
+                        );
+                        StateTransition::no_change(HealthState::Isolated)
+                    }
+                } else {
+                    // Recovery disabled, stay isolated
+                    StateTransition::no_change(HealthState::Isolated)
+                }
+            }
+            (HealthState::Isolated, HealthEvent::CheckFailed { .. }) => {
+                // Reset recovery counter on any failure
+                health.recovery_count = 0;
+                StateTransition::no_change(HealthState::Isolated)
+            }
+            (HealthState::Isolated, HealthEvent::FatalError { .. }) => {
+                // Reset recovery counter on fatal error
+                health.recovery_count = 0;
+                StateTransition::no_change(HealthState::Isolated)
+            }
+            (HealthState::Isolated, HealthEvent::IsolationCompleted) => {
+                // Already isolated, no change
                 StateTransition::no_change(HealthState::Isolated)
             }
 
@@ -535,7 +646,7 @@ mod tests {
         );
         manager.transition(&device, HealthEvent::IsolationCompleted);
 
-        // Try various events - should all stay isolated
+        // Try various events - should all stay isolated (recovery disabled)
         let transition = manager.transition(&device, HealthEvent::CheckPassed);
         assert!(!transition.changed);
         assert_eq!(transition.to, HealthState::Isolated);
@@ -548,5 +659,79 @@ mod tests {
         );
         assert!(!transition.changed);
         assert_eq!(transition.to, HealthState::Isolated);
+    }
+
+    #[test]
+    fn test_isolated_recovery_enabled() {
+        // Create manager with recovery enabled (threshold = 3)
+        let mut manager = GpuHealthManager::with_recovery(3, 3, vec![31, 43, 48, 79]);
+        let device = test_device(0);
+
+        // Make isolated
+        manager.transition(
+            &device,
+            HealthEvent::FatalError {
+                findings: vec![Finding::fatal_xid(79, "GPU fallen off the bus")],
+            },
+        );
+        manager.transition(&device, HealthEvent::IsolationCompleted);
+        assert_eq!(manager.get(&device).unwrap().state, HealthState::Isolated);
+
+        // First two passes - still isolated
+        for i in 0..2 {
+            let transition = manager.transition(&device, HealthEvent::CheckPassed);
+            assert!(!transition.changed);
+            assert_eq!(transition.to, HealthState::Isolated);
+            assert_eq!(manager.get(&device).unwrap().recovery_count, i + 1);
+        }
+
+        // Third pass - should recover
+        let transition = manager.transition(&device, HealthEvent::CheckPassed);
+        assert!(transition.changed);
+        assert_eq!(transition.from, HealthState::Isolated);
+        assert_eq!(transition.to, HealthState::Healthy);
+        assert!(!transition.actions.is_empty());
+
+        // Verify recovery actions include Uncordon and RemoveTaint
+        let has_uncordon = transition.actions.iter().any(|a| matches!(a, IsolationAction::Uncordon));
+        let has_remove_taint = transition.actions.iter().any(|a| matches!(a, IsolationAction::RemoveTaint { .. }));
+        assert!(has_uncordon, "Recovery should include Uncordon action");
+        assert!(has_remove_taint, "Recovery should include RemoveTaint action");
+
+        // Verify state is now healthy
+        let health = manager.get(&device).unwrap();
+        assert_eq!(health.state, HealthState::Healthy);
+        assert_eq!(health.failure_count, 0);
+        assert_eq!(health.recovery_count, 0);
+    }
+
+    #[test]
+    fn test_isolated_recovery_reset_on_failure() {
+        let mut manager = GpuHealthManager::with_recovery(3, 3, vec![31, 43, 48, 79]);
+        let device = test_device(0);
+
+        // Make isolated
+        manager.transition(
+            &device,
+            HealthEvent::FatalError {
+                findings: vec![Finding::fatal_xid(79, "GPU fallen off the bus")],
+            },
+        );
+        manager.transition(&device, HealthEvent::IsolationCompleted);
+
+        // Two passes
+        manager.transition(&device, HealthEvent::CheckPassed);
+        manager.transition(&device, HealthEvent::CheckPassed);
+        assert_eq!(manager.get(&device).unwrap().recovery_count, 2);
+
+        // Failure should reset recovery counter
+        manager.transition(
+            &device,
+            HealthEvent::CheckFailed {
+                findings: vec![Finding::high_temperature(90, 85)],
+            },
+        );
+        assert_eq!(manager.get(&device).unwrap().recovery_count, 0);
+        assert_eq!(manager.get(&device).unwrap().state, HealthState::Isolated);
     }
 }

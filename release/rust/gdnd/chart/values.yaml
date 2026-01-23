@@ -2,12 +2,22 @@
 # GPU Dead Node Detector configuration
 
 # Image configuration
+# IMPORTANT: Update repository to include your registry before deployment
+# Examples:
+#   - Docker Hub: docker.io/myorg/gdnd
+#   - Private registry: registry.example.com/gdnd
+#   - Cloud registry: gcr.io/my-project/gdnd, xxx.dkr.ecr.region.amazonaws.com/gdnd
 image:
-  repository: gdnd
-  tag: "latest"
+  # Container image repository (must include registry for production)
+  repository: "your-registry.example.com/gdnd"
+  # Image tag (use specific version tags in production, avoid "latest")
+  tag: "1.0.0"
   pullPolicy: IfNotPresent
 
-# Image pull secrets (if using private registry)
+# Image pull secrets (required for private registries)
+# Example:
+#   imagePullSecrets:
+#     - name: my-registry-secret
 imagePullSecrets: []
 
 # Resource limits
@@ -89,6 +99,32 @@ config:
   # Dry run mode - log actions but don't execute
   dryRun: false
 
+  # Self-healing configuration
+  # WARNING: Healing operations may interrupt running GPU workloads
+  # Use with caution in production environments
+  healing:
+    # Enable self-healing (disabled by default for safety)
+    enabled: false
+    # Healing strategy:
+    #   - conservative: Only kill zombie processes (safest)
+    #   - moderate: Kill zombies + GPU soft reset
+    #   - aggressive: All recovery options including driver reload (DANGEROUS)
+    strategy: conservative
+    # Run healing operations in dry-run mode (log but don't execute)
+    dryRun: false
+    # Timeout for healing operations
+    timeout: "30s"
+
+  # Recovery detection configuration
+  # Allow isolated GPUs to return to healthy state after recovery
+  recovery:
+    # Enable recovery detection (disabled by default)
+    enabled: false
+    # Number of consecutive healthy checks before recovery
+    threshold: 5
+    # Interval between recovery checks
+    interval: "5m"
+
 # Prometheus metrics configuration
 metrics:
   enabled: true
@@ -114,11 +150,29 @@ podAnnotations: {}
 podLabels: {}
 
 # Security context
+# GDND requires privileged access for:
+#   - GPU device access (/dev/nvidia*)
+#   - NVML library access
+#   - Reading /proc for zombie process detection
+# This requires Pod Security Standard: privileged
 securityContext:
   privileged: true
+  # Recommended: drop all capabilities and add only what's needed
+  # However, GPU access typically requires privileged mode
+  capabilities:
+    add:
+      - SYS_ADMIN  # Required for NVML operations
+    drop:
+      - ALL
 
 # Pod security context
-podSecurityContext: {}
+# Note: GDND requires privileged namespace for GPU access
+# Ensure namespace has: pod-security.kubernetes.io/enforce: privileged
+podSecurityContext:
+  # Run as root for GPU device access
+  runAsUser: 0
+  runAsGroup: 0
+  fsGroup: 0
 
 # Extra environment variables
 extraEnv: []
@@ -128,3 +182,33 @@ extraVolumeMounts: []
 
 # Extra volumes
 extraVolumes: []
+
+# Network Policy configuration
+# Enable to restrict pod network access in security-sensitive environments
+networkPolicy:
+  # Set to true to create NetworkPolicy
+  enabled: false
+
+  # Kubernetes API server access configuration
+  apiServer:
+    # API server port (default: 6443)
+    port: 6443
+    # API server CIDR (leave empty to allow all, recommended to set for production)
+    # Example: "10.0.0.1/32" for specific API server IP
+    cidr: ""
+
+  # Prometheus scraping configuration
+  prometheus:
+    # Namespace selector for Prometheus pods
+    # Example:
+    #   namespaceSelector:
+    #     matchLabels:
+    #       name: monitoring
+    namespaceSelector: {}
+    # Pod selector for Prometheus pods
+    # Example:
+    #   podSelector:
+    #     matchLabels:
+    #       app: prometheus
+    podSelector: {}
+

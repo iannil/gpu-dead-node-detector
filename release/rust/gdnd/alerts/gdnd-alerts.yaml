@@ -1,0 +1,171 @@
+# GDND (GPU Dead Node Detector) AlertManager Rules
+#
+# Usage:
+#   1. Copy this file to your Prometheus rules directory
+#   2. Or include via Prometheus Operator PrometheusRule CRD
+#   3. Adjust thresholds and labels as needed for your environment
+#
+# Severity levels:
+#   - critical: Requires immediate attention, production impact
+#   - warning: Requires attention soon, potential impact
+#   - info: Informational, no immediate action required
+
+groups:
+  - name: gdnd.rules
+    rules:
+      # ============================================================
+      # GPU Health State Alerts
+      # ============================================================
+
+      # GPU becomes unhealthy
+      - alert: GpuUnhealthy
+        expr: gdnd_gpu_status == 2
+        for: 1m
+        labels:
+          severity: warning
+          component: gdnd
+        annotations:
+          summary: "GPU {{ $labels.gpu }} is unhealthy"
+          description: "GPU {{ $labels.gpu }} ({{ $labels.name }}) on node has entered UNHEALTHY state. Node may be cordoned soon."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-unhealthy"
+
+      # GPU has been isolated
+      - alert: GpuIsolated
+        expr: gdnd_gpu_status == 3
+        for: 0m
+        labels:
+          severity: critical
+          component: gdnd
+        annotations:
+          summary: "GPU {{ $labels.gpu }} is isolated"
+          description: "GPU {{ $labels.gpu }} ({{ $labels.name }}) has been isolated. The node is cordoned and tainted. Manual intervention may be required."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-isolated"
+
+      # Multiple GPUs in suspected state (early warning)
+      - alert: MultipleGpusSuspected
+        expr: count(gdnd_gpu_status == 1) >= 2
+        for: 5m
+        labels:
+          severity: warning
+          component: gdnd
+        annotations:
+          summary: "Multiple GPUs in suspected state"
+          description: "{{ $value }} GPUs are in SUSPECTED state. This may indicate a systemic issue."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-multi-suspected"
+
+      # ============================================================
+      # Cluster-Level Alerts
+      # ============================================================
+
+      # High percentage of GPUs unavailable
+      - alert: GpuClusterDegraded
+        expr: (count(gdnd_gpu_status > 0) / gdnd_gpu_count) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: gdnd
+        annotations:
+          summary: "GPU cluster degraded - over 10% GPUs unhealthy"
+          description: "More than 10% of GPUs in the cluster are not healthy. Current unavailable: {{ $value | humanizePercentage }}"
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-cluster-degraded"
+
+      # Multiple isolations in short time (potential cascade failure)
+      - alert: GpuIsolationSpike
+        expr: increase(gdnd_isolation_actions_total{action="cordon"}[15m]) >= 3
+        for: 0m
+        labels:
+          severity: critical
+          component: gdnd
+        annotations:
+          summary: "Spike in GPU isolations"
+          description: "{{ $value }} GPU nodes have been isolated in the last 15 minutes. This may indicate a cluster-wide issue."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-isolation-spike"
+
+      # No GPUs detected (GDND may be misconfigured)
+      - alert: NoGpusDetected
+        expr: gdnd_gpu_count == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: gdnd
+        annotations:
+          summary: "No GPUs detected by GDND"
+          description: "GDND has not detected any GPUs. This may indicate a configuration issue or driver problem."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-no-gpus"
+
+      # ============================================================
+      # Detection Performance Alerts
+      # ============================================================
+
+      # Detection checks are frequently failing
+      - alert: GpuCheckFailureRate
+        expr: |
+          (
+            increase(gdnd_check_failures_total[10m])
+            /
+            (increase(gdnd_check_failures_total[10m]) + increase(gdnd_check_duration_seconds_count[10m]))
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: gdnd
+        annotations:
+          summary: "High GPU check failure rate"
+          description: "More than 50% of GPU health checks are failing. Level: {{ $labels.level }}, Reason: {{ $labels.reason }}"
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-check-failures"
+
+      # Detection checks are taking too long
+      - alert: GpuCheckLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(gdnd_check_duration_seconds_bucket[5m])) by (le, level)) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: gdnd
+        annotations:
+          summary: "GPU check latency is high"
+          description: "{{ $labels.level }} detection checks P95 latency is {{ $value | humanizeDuration }}. This may indicate GPU or driver issues."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-high-latency"
+
+      # ============================================================
+      # GPU Metrics Alerts
+      # ============================================================
+
+      # GPU temperature critical
+      - alert: GpuTemperatureCritical
+        expr: gdnd_gpu_temperature_celsius > 90
+        for: 2m
+        labels:
+          severity: critical
+          component: gdnd
+        annotations:
+          summary: "GPU {{ $labels.gpu }} temperature critical"
+          description: "GPU {{ $labels.gpu }} temperature is {{ $value }}°C, which exceeds the critical threshold of 90°C."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-temp-critical"
+
+      # GPU temperature warning
+      - alert: GpuTemperatureWarning
+        expr: gdnd_gpu_temperature_celsius > 80 and gdnd_gpu_temperature_celsius <= 90
+        for: 5m
+        labels:
+          severity: warning
+          component: gdnd
+        annotations:
+          summary: "GPU {{ $labels.gpu }} temperature elevated"
+          description: "GPU {{ $labels.gpu }} temperature is {{ $value }}°C. Consider checking cooling systems."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-temp-warning"
+
+      # ============================================================
+      # GDND Service Health
+      # ============================================================
+
+      # GDND is down (using up metric from Prometheus)
+      - alert: GdndDown
+        expr: up{job="gdnd"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: gdnd
+        annotations:
+          summary: "GDND is down"
+          description: "GDND service is not responding. GPU health monitoring is unavailable."
+          runbook_url: "https://your-wiki.example.com/runbooks/gdnd-down"

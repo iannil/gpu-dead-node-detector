@@ -7,9 +7,11 @@
 
 mod l1_passive;
 mod l2_active;
+mod l3_pcie;
 
 pub use l1_passive::L1PassiveDetector;
 pub use l2_active::L2ActiveDetector;
+pub use l3_pcie::{L3PcieConfig, L3PcieDetector};
 
 use serde::{Deserialize, Serialize};
 

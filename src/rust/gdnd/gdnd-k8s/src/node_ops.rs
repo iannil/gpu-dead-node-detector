@@ -86,6 +86,12 @@ impl NodeOperator {
             IsolationAction::Alert { message, severity } => {
                 self.send_alert(message, severity).await?;
             }
+            IsolationAction::Uncordon => {
+                self.uncordon().await?;
+            }
+            IsolationAction::RemoveTaint { key } => {
+                self.remove_taint(key).await?;
+            }
         }
         Ok(())
     }

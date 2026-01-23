@@ -36,7 +36,12 @@ pub enum AscendErrorCode {
 }
 
 impl AscendErrorCode {
-    /// Check if this error code is fatal
+    /// Check if this error code is fatal based on the error type
+    ///
+    /// Used to determine if an error should trigger immediate isolation.
+    /// This is a static check based on error type; for configurable checks,
+    /// use `AscendDevice::is_error_fatal()`.
+    #[allow(dead_code)] // Public API for external consumers
     pub fn is_fatal(&self) -> bool {
         matches!(
             self,
@@ -46,6 +51,12 @@ impl AscendErrorCode {
                 | AscendErrorCode::DeviceLost
                 | AscendErrorCode::EccUncorrectable
         )
+    }
+
+    /// Get the numeric error code
+    #[allow(dead_code)] // Public API for external consumers
+    pub fn code(&self) -> u32 {
+        *self as u32
     }
 
     /// Get human-readable description
@@ -111,7 +122,7 @@ pub struct AscendDevice {
     npu_check_path: String,
     /// Path to NPU log directory
     log_dir: PathBuf,
-    /// Fatal error codes
+    /// Fatal error codes for custom configuration
     fatal_error_codes: Vec<u32>,
 }
 
@@ -149,13 +160,26 @@ impl AscendDevice {
         })
     }
 
+    /// Check if an error code is configured as fatal
+    ///
+    /// This uses the configured fatal_error_codes list, allowing custom
+    /// configuration of which errors should trigger immediate isolation.
+    pub fn is_error_fatal(&self, code: u32) -> bool {
+        self.fatal_error_codes.contains(&code)
+    }
+
+    /// Get the configured fatal error codes
+    pub fn fatal_error_codes(&self) -> &[u32] {
+        &self.fatal_error_codes
+    }
+
     /// Execute npu-smi command with arguments
     async fn run_npu_smi(&self, args: &[&str]) -> Result<String, DeviceError> {
         let output = tokio::process::Command::new(&self.npu_smi_path)
             .args(args)
             .output()
             .await
-            .map_err(|e| DeviceError::IoError(e))?;
+            .map_err(DeviceError::IoError)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -581,9 +605,36 @@ mod tests {
         assert_eq!(AscendErrorCode::from_code(1007), AscendErrorCode::DeviceLost);
         assert_eq!(AscendErrorCode::from_code(9999), AscendErrorCode::Unknown);
 
+        // Test is_fatal method
         assert!(AscendErrorCode::HbmError.is_fatal());
         assert!(AscendErrorCode::DeviceLost.is_fatal());
         assert!(!AscendErrorCode::OverTemperature.is_fatal());
+
+        // Test code() method
+        assert_eq!(AscendErrorCode::HbmError.code(), 1001);
+        assert_eq!(AscendErrorCode::AiCoreHang.code(), 1002);
+        assert_eq!(AscendErrorCode::DeviceLost.code(), 1007);
+    }
+
+    #[test]
+    fn test_fatal_error_codes_config() {
+        let device = AscendDevice {
+            npu_smi_path: "/usr/local/bin/npu-smi".to_string(),
+            npu_check_path: "/usr/local/bin/npu-check".to_string(),
+            log_dir: PathBuf::from("/var/log/npu/slog"),
+            fatal_error_codes: vec![1001, 1002, 1007, 1008],
+        };
+
+        // Test is_error_fatal method
+        assert!(device.is_error_fatal(1001)); // HbmError
+        assert!(device.is_error_fatal(1002)); // AiCoreHang
+        assert!(device.is_error_fatal(1007)); // DeviceLost
+        assert!(device.is_error_fatal(1008)); // EccUncorrectable
+        assert!(!device.is_error_fatal(1003)); // OverTemperature - not in fatal list
+        assert!(!device.is_error_fatal(1005)); // PcieLinkError - not in this config
+
+        // Test fatal_error_codes getter
+        assert_eq!(device.fatal_error_codes(), &[1001, 1002, 1007, 1008]);
     }
 
     #[test]
