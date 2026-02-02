@@ -210,11 +210,9 @@ impl AscendDevice {
         let mut devices = Vec::new();
 
         // Match device lines: "| 0       910B3             | OK            |"
-        let device_regex =
-            Regex::new(r"\|\s*(\d+)\s+(\S+)\s+\|\s*(\w+)\s+\|").unwrap();
+        let device_regex = Regex::new(r"\|\s*(\d+)\s+(\S+)\s+\|\s*(\w+)\s+\|").unwrap();
         // Match chip lines: "| 0                         | 0000:C1:00.0  |"
-        let chip_regex =
-            Regex::new(r"\|\s*(\d+)\s+\|\s*([0-9a-fA-F:\.]+)\s+\|").unwrap();
+        let chip_regex = Regex::new(r"\|\s*(\d+)\s+\|\s*([0-9a-fA-F:\.]+)\s+\|").unwrap();
 
         let lines: Vec<&str> = output.lines().collect();
         let mut i = 0;
@@ -230,9 +228,7 @@ impl AscendDevice {
 
                 // Try to get bus_id from next line
                 let bus_id = if i + 1 < lines.len() {
-                    chip_regex
-                        .captures(lines[i + 1])
-                        .map(|c| c[2].to_string())
+                    chip_regex.captures(lines[i + 1]).map(|c| c[2].to_string())
                 } else {
                     None
                 };
@@ -262,10 +258,8 @@ impl AscendDevice {
 
         // Match the main device line with metrics
         // "| 0       910B3             | OK            | 112.5       37         0 / 0"
-        let main_regex = Regex::new(
-            r"\|\s*(\d+)\s+\S+\s+\|\s*\w+\s+\|\s*(\d+\.?\d*)\s+(\d+)\s+",
-        )
-        .unwrap();
+        let main_regex =
+            Regex::new(r"\|\s*(\d+)\s+\S+\s+\|\s*\w+\s+\|\s*(\d+\.?\d*)\s+(\d+)\s+").unwrap();
 
         // Match the chip line with AICore and HBM
         // "| 0                         | 0000:C1:00.0  | 6           0 / 0              33551 / 65536"
@@ -601,8 +595,14 @@ mod tests {
     #[test]
     fn test_ascend_error_codes() {
         assert_eq!(AscendErrorCode::from_code(1001), AscendErrorCode::HbmError);
-        assert_eq!(AscendErrorCode::from_code(1002), AscendErrorCode::AiCoreHang);
-        assert_eq!(AscendErrorCode::from_code(1007), AscendErrorCode::DeviceLost);
+        assert_eq!(
+            AscendErrorCode::from_code(1002),
+            AscendErrorCode::AiCoreHang
+        );
+        assert_eq!(
+            AscendErrorCode::from_code(1007),
+            AscendErrorCode::DeviceLost
+        );
         assert_eq!(AscendErrorCode::from_code(9999), AscendErrorCode::Unknown);
 
         // Test is_fatal method

@@ -59,7 +59,10 @@ static CHECK_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
 /// Detection failure counter
 static CHECK_FAILURES: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
-        opts!("gdnd_check_failures_total", "Total number of detection failures"),
+        opts!(
+            "gdnd_check_failures_total",
+            "Total number of detection failures"
+        ),
         &["level", "gpu", "reason"]
     )
     .expect("Failed to create check_failures metric")
@@ -68,7 +71,10 @@ static CHECK_FAILURES: Lazy<IntCounterVec> = Lazy::new(|| {
 /// Isolation action counter
 static ISOLATION_ACTIONS: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
-        opts!("gdnd_isolation_actions_total", "Total number of isolation actions"),
+        opts!(
+            "gdnd_isolation_actions_total",
+            "Total number of isolation actions"
+        ),
         &["action"]
     )
     .expect("Failed to create isolation_actions metric")
@@ -76,10 +82,8 @@ static ISOLATION_ACTIONS: Lazy<IntCounterVec> = Lazy::new(|| {
 
 /// Number of GPUs detected
 static GPU_COUNT: Lazy<IntGauge> = Lazy::new(|| {
-    register_int_gauge!(
-        opts!("gdnd_gpu_count", "Number of GPUs detected")
-    )
-    .expect("Failed to create gpu_count metric")
+    register_int_gauge!(opts!("gdnd_gpu_count", "Number of GPUs detected"))
+        .expect("Failed to create gpu_count metric")
 });
 
 /// Metrics registry wrapper

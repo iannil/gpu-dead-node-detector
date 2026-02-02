@@ -19,7 +19,9 @@ use cli::Cli;
 use config::{Config, HealingStrategy as ConfigHealingStrategy};
 use gdnd_core::detection::{L1PassiveDetector, L2ActiveDetector, L3PcieDetector};
 use gdnd_core::device::{create_device_interface, DeviceType as CoreDeviceType};
-use gdnd_core::healing::{HealingConfig as CoreHealingConfig, HealingStrategy as CoreHealingStrategy, SelfHealer};
+use gdnd_core::healing::{
+    HealingConfig as CoreHealingConfig, HealingStrategy as CoreHealingStrategy, SelfHealer,
+};
 use gdnd_core::metrics::MetricsRegistry;
 use gdnd_core::scheduler::{DetectionScheduler, IsolationExecutor};
 use gdnd_core::state_machine::{GpuHealthManager, StateTransition};
@@ -28,8 +30,7 @@ use gdnd_k8s::node_ops::{IsolationConfig, NodeOperator};
 
 /// Initialize the tracing/logging subsystem
 fn init_logging(log_level: &str, json_format: bool) {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     if json_format {
         tracing_subscriber::registry()

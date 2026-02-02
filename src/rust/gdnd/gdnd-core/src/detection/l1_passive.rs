@@ -125,7 +125,10 @@ impl L1PassiveDetector {
 
         // Determine overall result
         if findings.is_empty() {
-            Ok(DetectionResult::pass(device.clone(), DetectionLevel::L1Passive))
+            Ok(DetectionResult::pass(
+                device.clone(),
+                DetectionLevel::L1Passive,
+            ))
         } else {
             Ok(DetectionResult::fail(
                 device.clone(),

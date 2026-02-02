@@ -70,7 +70,10 @@ impl L3PcieDetector {
                     device = %device,
                     "PCIe test not supported, skipping"
                 );
-                return Ok(DetectionResult::pass(device.clone(), DetectionLevel::L3Pcie));
+                return Ok(DetectionResult::pass(
+                    device.clone(),
+                    DetectionLevel::L3Pcie,
+                ));
             } else {
                 return Ok(DetectionResult::fail(
                     device.clone(),
@@ -94,7 +97,10 @@ impl L3PcieDetector {
                 duration = ?result.duration,
                 "L3 PCIe bandwidth test passed"
             );
-            Ok(DetectionResult::pass(device.clone(), DetectionLevel::L3Pcie))
+            Ok(DetectionResult::pass(
+                device.clone(),
+                DetectionLevel::L3Pcie,
+            ))
         } else {
             let error_msg = result
                 .error

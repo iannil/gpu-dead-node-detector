@@ -48,9 +48,16 @@ impl L2ActiveDetector {
                 duration = ?result.duration,
                 "L2 active check passed"
             );
-            Ok(DetectionResult::pass(device.clone(), DetectionLevel::L2Active))
+            Ok(DetectionResult::pass(
+                device.clone(),
+                DetectionLevel::L2Active,
+            ))
         } else {
-            let finding = if result.error.as_ref().is_some_and(|e| e.contains("timed out")) {
+            let finding = if result
+                .error
+                .as_ref()
+                .is_some_and(|e| e.contains("timed out"))
+            {
                 warn!(device = %device, timeout = ?self.timeout, "L2 active check timed out");
                 Finding::new(
                     FindingType::ActiveCheckTimeout,

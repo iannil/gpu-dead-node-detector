@@ -382,7 +382,10 @@ impl SelfHealer {
 
         info!(pid = pid, "Killing process");
 
-        let output = Command::new("kill").arg("-9").arg(pid.to_string()).output()?;
+        let output = Command::new("kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .output()?;
 
         if output.status.success() {
             info!(pid = pid, "Process killed successfully");

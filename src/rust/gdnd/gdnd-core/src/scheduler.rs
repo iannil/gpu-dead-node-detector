@@ -9,7 +9,9 @@ use anyhow::Result;
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
-use crate::detection::{DetectionLevel, DetectionResult, L1PassiveDetector, L2ActiveDetector, L3PcieDetector};
+use crate::detection::{
+    DetectionLevel, DetectionResult, L1PassiveDetector, L2ActiveDetector, L3PcieDetector,
+};
 use crate::healing::SelfHealer;
 use crate::metrics::MetricsRegistry;
 use crate::state_machine::{GpuHealthManager, HealthEvent, HealthState, StateTransition};
@@ -212,10 +214,8 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
                     let healer = Arc::clone(healer);
 
                     // Run healing in blocking task since it uses std::process::Command
-                    let heal_results = tokio::task::spawn_blocking(move || {
-                        healer.heal(&device)
-                    })
-                    .await;
+                    let heal_results =
+                        tokio::task::spawn_blocking(move || healer.heal(&device)).await;
 
                     match heal_results {
                         Ok(Ok(results)) => {
@@ -277,7 +277,8 @@ impl<E: IsolationExecutor + 'static> DetectionScheduler<E> {
         if !result.passed {
             for finding in &result.findings {
                 let reason = format!("{:?}", finding.finding_type);
-                self.metrics.inc_check_failure(level, &result.device, &reason);
+                self.metrics
+                    .inc_check_failure(level, &result.device, &reason);
             }
         }
     }
@@ -324,18 +325,14 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_run_once() {
         let device = Arc::new(MockDevice::new());
-        let l1_detector =
-            L1PassiveDetector::new(device.clone(), 85, vec![31, 43, 48, 79]);
+        let l1_detector = L1PassiveDetector::new(device.clone(), 85, vec![31, 43, 48, 79]);
         let l2_detector = L2ActiveDetector::new(
             device.clone(),
             "/usr/local/bin/gpu-check".to_string(),
             Duration::from_secs(5),
         );
 
-        let health_manager = Arc::new(RwLock::new(GpuHealthManager::new(
-            3,
-            vec![31, 43, 48, 79],
-        )));
+        let health_manager = Arc::new(RwLock::new(GpuHealthManager::new(3, vec![31, 43, 48, 79])));
 
         let executor = Arc::new(MockExecutor::new());
         let metrics = Arc::new(MetricsRegistry::new());

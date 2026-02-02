@@ -55,3 +55,66 @@ pub async fn create_device_interface(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_device_auto_fallback_to_mock() {
+        // In CI/test environment without GPU, should fall back to MockDevice
+        let device = create_device_interface(DeviceType::Auto)
+            .await
+            .expect("Should always return a device (at least mock)");
+
+        // Verify it's a working device interface
+        let devices = device.list_devices().await.unwrap();
+        // MockDevice returns 2 mock devices
+        assert!(
+            !devices.is_empty(),
+            "MockDevice should return at least one device"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_device_nvidia_error_without_gpu() {
+        // Should fail if NVIDIA is not available
+        let result = create_device_interface(DeviceType::Nvidia).await;
+
+        // In test environment without GPU, this should return Err
+        match result {
+            Ok(_) => {
+                // If we're in an environment with GPU, test passes
+            }
+            Err(e) => {
+                // Expected in test environment - should be NvmlInitError
+                assert!(
+                    matches!(e, DeviceError::NvmlInitError(_)),
+                    "Expected NvmlInitError, got: {:?}",
+                    e
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_device_ascend_error_without_npu() {
+        // Should fail if Ascend is not available
+        let result = create_device_interface(DeviceType::Ascend).await;
+
+        // In test environment without NPU, this should return Err
+        match result {
+            Ok(_) => {
+                // If we're in an environment with NPU, test passes
+            }
+            Err(e) => {
+                // Expected in test environment - npu-smi not found
+                assert!(
+                    matches!(e, DeviceError::Other(_) | DeviceError::IoError(_)),
+                    "Expected Other or IoError, got: {:?}",
+                    e
+                );
+            }
+        }
+    }
+}

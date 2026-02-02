@@ -267,11 +267,8 @@ mod tests {
         assert!(success.passed);
         assert!(success.error.is_none());
 
-        let failure = CheckResult::failure(
-            Duration::from_millis(50),
-            "GPU hung".to_string(),
-            Some(1),
-        );
+        let failure =
+            CheckResult::failure(Duration::from_millis(50), "GPU hung".to_string(), Some(1));
         assert!(!failure.passed);
         assert!(failure.error.is_some());
 

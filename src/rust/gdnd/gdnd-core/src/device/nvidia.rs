@@ -91,9 +91,7 @@ impl DeviceInterface for NvidiaDevice {
             .map_err(|e| DeviceError::DeviceNotFound(e.to_string()))?;
 
         // Temperature
-        let temperature = nvml_device
-            .temperature(TemperatureSensor::Gpu)
-            .unwrap_or(0);
+        let temperature = nvml_device.temperature(TemperatureSensor::Gpu).unwrap_or(0);
 
         // Utilization
         let (gpu_utilization, memory_utilization) = nvml_device
@@ -103,19 +101,20 @@ impl DeviceInterface for NvidiaDevice {
 
         // Power
         let power_usage = nvml_device.power_usage().unwrap_or(0) / 1000; // mW to W
-        let power_limit = nvml_device
-            .power_management_limit()
-            .unwrap_or(0)
-            / 1000;
+        let power_limit = nvml_device.power_management_limit().unwrap_or(0) / 1000;
 
         // Memory
-        let memory_info = nvml_device.memory_info().map_err(|e| {
-            DeviceError::QueryError(format!("Failed to get memory info: {}", e))
-        })?;
+        let memory_info = nvml_device
+            .memory_info()
+            .map_err(|e| DeviceError::QueryError(format!("Failed to get memory info: {}", e)))?;
 
         // PCIe throughput
-        let pcie_tx = nvml_device.pcie_throughput(nvml_wrapper::enum_wrappers::device::PcieUtilCounter::Send).ok();
-        let pcie_rx = nvml_device.pcie_throughput(nvml_wrapper::enum_wrappers::device::PcieUtilCounter::Receive).ok();
+        let pcie_tx = nvml_device
+            .pcie_throughput(nvml_wrapper::enum_wrappers::device::PcieUtilCounter::Send)
+            .ok();
+        let pcie_rx = nvml_device
+            .pcie_throughput(nvml_wrapper::enum_wrappers::device::PcieUtilCounter::Receive)
+            .ok();
 
         // ECC errors - simplify handling as API varies by version
         // For now, just return default. Full ECC support can be added later.
@@ -333,5 +332,70 @@ mod tests {
         assert!(get_xid_description(48).contains("ECC"));
         assert!(get_xid_description(79).contains("fallen off"));
         assert!(get_xid_description(9999).contains("Unknown"));
+    }
+
+    #[test]
+    fn test_all_fatal_xid_codes() {
+        // Test all common fatal XID codes have descriptions
+        let fatal_codes = [31, 43, 48, 79];
+        for code in fatal_codes {
+            let desc = get_xid_description(code);
+            assert!(!desc.is_empty(), "XID {} should have description", code);
+            assert!(
+                !desc.contains("Unknown"),
+                "XID {} should not be unknown",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_nvidia_device_new() {
+        // Test device creation (may fail without GPU)
+        let result = NvidiaDevice::new();
+        match result {
+            Ok(device) => {
+                assert_eq!(DeviceType::Nvidia, device.device_type());
+                assert!(device.supports_pcie_test());
+            }
+            Err(e) => {
+                // Expected in test environment
+                assert!(matches!(e, DeviceError::NvmlInitError(_)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_nvidia_device_with_custom_path() {
+        let result = NvidiaDevice::with_gpu_check_path("/custom/path/gpu-check".to_string());
+        match result {
+            Ok(device) => {
+                assert_eq!(DeviceType::Nvidia, device.device_type());
+            }
+            Err(e) => {
+                // Expected in test environment
+                assert!(matches!(e, DeviceError::NvmlInitError(_)));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_nvidia_device_without_nvml() {
+        // Test behavior when NVML is not available
+        // This should fail in test environment
+        let device = NvidiaDevice::new();
+        match device {
+            Err(DeviceError::NvmlInitError(_)) => {
+                // Expected - test passes
+            }
+            Ok(_) => {
+                // If GPU is available, verify device_type works
+                let d = device.unwrap();
+                assert_eq!(DeviceType::Nvidia, d.device_type());
+            }
+            Err(e) => {
+                panic!("Unexpected error: {:?}", e);
+            }
+        }
     }
 }

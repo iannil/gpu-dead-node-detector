@@ -57,9 +57,7 @@ pub enum IsolationAction {
         effect: String,
     },
     /// Remove taint from the node
-    RemoveTaint {
-        key: String,
-    },
+    RemoveTaint { key: String },
     /// Evict pods from the node
     EvictPods,
     /// Send alert
@@ -177,7 +175,11 @@ impl GpuHealthManager {
     }
 
     /// Create a new health manager with recovery enabled
-    pub fn with_recovery(failure_threshold: u32, recovery_threshold: u32, fatal_xids: Vec<u32>) -> Self {
+    pub fn with_recovery(
+        failure_threshold: u32,
+        recovery_threshold: u32,
+        fatal_xids: Vec<u32>,
+    ) -> Self {
         Self {
             health: HashMap::new(),
             failure_threshold,
@@ -466,9 +468,7 @@ impl GpuHealthManager {
             }
 
             // IsolationCompleted for non-UNHEALTHY states - should not happen, but handle gracefully
-            (_, HealthEvent::IsolationCompleted) => {
-                StateTransition::no_change(health.state)
-            }
+            (_, HealthEvent::IsolationCompleted) => StateTransition::no_change(health.state),
         }
     }
 
@@ -693,10 +693,19 @@ mod tests {
         assert!(!transition.actions.is_empty());
 
         // Verify recovery actions include Uncordon and RemoveTaint
-        let has_uncordon = transition.actions.iter().any(|a| matches!(a, IsolationAction::Uncordon));
-        let has_remove_taint = transition.actions.iter().any(|a| matches!(a, IsolationAction::RemoveTaint { .. }));
+        let has_uncordon = transition
+            .actions
+            .iter()
+            .any(|a| matches!(a, IsolationAction::Uncordon));
+        let has_remove_taint = transition
+            .actions
+            .iter()
+            .any(|a| matches!(a, IsolationAction::RemoveTaint { .. }));
         assert!(has_uncordon, "Recovery should include Uncordon action");
-        assert!(has_remove_taint, "Recovery should include RemoveTaint action");
+        assert!(
+            has_remove_taint,
+            "Recovery should include RemoveTaint action"
+        );
 
         // Verify state is now healthy
         let health = manager.get(&device).unwrap();
